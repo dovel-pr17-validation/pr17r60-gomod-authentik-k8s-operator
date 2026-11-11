@@ -1,0 +1,293 @@
+package authentik
+
+import (
+	"context"
+	"fmt"
+	"net/http"
+	"net/url"
+	"strings"
+
+	api "goauthentik.io/api/v3"
+)
+
+// ProviderInfo contains information about an OAuth2 provider
+type ProviderInfo struct {
+	ID           int32
+	Name         string
+	ClientID     string
+	ClientSecret string
+}
+
+// OAuth2ProviderOptions contains settings for OAuth2 provider creation/update
+type OAuth2ProviderOptions struct {
+	AuthorizationFlow    string
+	InvalidationFlow     string
+	RedirectURIs         []string
+	Scopes               []string // Scope names like "openid", "email", "profile"
+	ClientType           string
+	AccessCodeValidity   string
+	AccessTokenValidity  string
+	RefreshTokenValidity string
+	SubMode              string
+	IncludeClaimsInToken *bool
+	IssuerMode           string
+	PropertyMappings     []string
+	SigningKey           string
+}
+
+// Validate validates the OAuth2ProviderOptions
+func (o *OAuth2ProviderOptions) Validate() error {
+	if o.AuthorizationFlow == "" {
+		return fmt.Errorf("authorizationFlow is required")
+	}
+	if o.InvalidationFlow == "" {
+		return fmt.Errorf("invalidationFlow is required")
+	}
+	if len(o.RedirectURIs) == 0 {
+		return fmt.Errorf("at least one redirectUri is required")
+	}
+	for i, uri := range o.RedirectURIs {
+		if strings.TrimSpace(uri) == "" {
+			return fmt.Errorf("redirectUri[%d] cannot be empty", i)
+		}
+		parsed, err := url.Parse(uri)
+		if err != nil {
+			return fmt.Errorf("redirectUri[%d] is not a valid URI: %w", i, err)
+		}
+		if parsed.Scheme == "" {
+			return fmt.Errorf("redirectUri[%d] %q is missing a scheme", i, uri)
+		}
+	}
+	return nil
+}
+
+// GetOAuth2ProviderByName retrieves an OAuth2 provider by name
+func (c *APIClient) GetOAuth2ProviderByName(ctx context.Context, name string) (*ProviderInfo, error) {
+	// List providers and filter by name
+	providers, resp, err := c.api.ProvidersAPI.ProvidersOauth2List(ctx).Name(name).PageSize(1).Execute()
+	if err != nil {
+		if resp != nil && resp.StatusCode == http.StatusNotFound {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("failed to list providers: %w", err)
+	}
+
+	if len(providers.Results) == 0 {
+		return nil, nil
+	}
+
+	provider := providers.Results[0]
+	return &ProviderInfo{
+		ID:           provider.Pk,
+		Name:         provider.Name,
+		ClientID:     provider.GetClientId(),
+		ClientSecret: provider.GetClientSecret(),
+	}, nil
+}
+
+// GetOAuth2ProviderByID retrieves an OAuth2 provider by ID
+func (c *APIClient) GetOAuth2ProviderByID(ctx context.Context, id int32) (*ProviderInfo, error) {
+	provider, resp, err := c.api.ProvidersAPI.ProvidersOauth2Retrieve(ctx, id).Execute()
+	if err != nil {
+		if resp != nil && resp.StatusCode == http.StatusNotFound {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("failed to get provider: %w", err)
+	}
+
+	return &ProviderInfo{
+		ID:           provider.Pk,
+		Name:         provider.Name,
+		ClientID:     provider.GetClientId(),
+		ClientSecret: provider.GetClientSecret(),
+	}, nil
+}
+
+// buildRedirectURIs converts string slice to RedirectURIRequest slice
+func buildRedirectURIs(uris []string) []api.RedirectURIRequest {
+	result := make([]api.RedirectURIRequest, len(uris))
+	for i, uri := range uris {
+		result[i] = api.RedirectURIRequest{
+			MatchingMode: api.MATCHINGMODEENUM_STRICT,
+			Url:          uri,
+		}
+	}
+	return result
+}
+
+// buildProviderRequest validates options, resolves flow UUIDs, scope mappings,
+// and signing keys, then returns a fully-configured OAuth2ProviderRequest.
+func (c *APIClient) buildProviderRequest(ctx context.Context, name string, opts *OAuth2ProviderOptions) (*api.OAuth2ProviderRequest, error) {
+	if opts == nil {
+		return nil, fmt.Errorf("provider options are required")
+	}
+
+	if err := opts.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid provider options: %w", err)
+	}
+
+	// Get the authorization flow UUID
+	authFlow, resp, err := c.api.FlowsAPI.FlowsInstancesRetrieve(ctx, opts.AuthorizationFlow).Execute()
+	if err != nil {
+		if resp != nil && resp.StatusCode == http.StatusNotFound {
+			return nil, fmt.Errorf("authorization flow %q not found", opts.AuthorizationFlow)
+		}
+		return nil, extractAPIError(err, "failed to get authorization flow")
+	}
+
+	// Get the invalidation flow UUID
+	invalidationFlow, resp, err := c.api.FlowsAPI.FlowsInstancesRetrieve(ctx, opts.InvalidationFlow).Execute()
+	if err != nil {
+		if resp != nil && resp.StatusCode == http.StatusNotFound {
+			return nil, fmt.Errorf("invalidation flow %q not found", opts.InvalidationFlow)
+		}
+		return nil, extractAPIError(err, "failed to get invalidation flow")
+	}
+
+	req := api.NewOAuth2ProviderRequest(name, authFlow.Pk, invalidationFlow.Pk, buildRedirectURIs(opts.RedirectURIs))
+
+	if opts.ClientType != "" {
+		clientType, err := api.NewClientTypeEnumFromValue(opts.ClientType)
+		if err != nil {
+			return nil, fmt.Errorf("invalid clientType %q: %w", opts.ClientType, err)
+		}
+		req.SetClientType(*clientType)
+	}
+
+	if opts.AccessCodeValidity != "" {
+		req.SetAccessCodeValidity(opts.AccessCodeValidity)
+	}
+	if opts.AccessTokenValidity != "" {
+		req.SetAccessTokenValidity(opts.AccessTokenValidity)
+	}
+	if opts.RefreshTokenValidity != "" {
+		req.SetRefreshTokenValidity(opts.RefreshTokenValidity)
+	}
+
+	if opts.SubMode != "" {
+		subMode, err := api.NewSubModeEnumFromValue(opts.SubMode)
+		if err != nil {
+			return nil, fmt.Errorf("invalid subMode %q: %w", opts.SubMode, err)
+		}
+		if subMode != nil {
+			req.SetSubMode(*subMode)
+		}
+	}
+
+	if opts.IncludeClaimsInToken != nil {
+		req.SetIncludeClaimsInIdToken(*opts.IncludeClaimsInToken)
+	}
+
+	if opts.IssuerMode != "" {
+		issuerMode, err := api.NewIssuerModeEnumFromValue(opts.IssuerMode)
+		if err != nil {
+			return nil, fmt.Errorf("invalid issuerMode %q: %w", opts.IssuerMode, err)
+		}
+		if issuerMode != nil {
+			req.SetIssuerMode(*issuerMode)
+		}
+	}
+
+	var allPropertyMappings []string
+	for _, scopeName := range opts.Scopes {
+		scopeUUID, err := c.GetScopeMappingByName(ctx, scopeName)
+		if err != nil {
+			return nil, fmt.Errorf("failed to look up scope %q: %w", scopeName, err)
+		}
+		allPropertyMappings = append(allPropertyMappings, scopeUUID)
+	}
+	allPropertyMappings = append(allPropertyMappings, opts.PropertyMappings...)
+	if len(allPropertyMappings) > 0 {
+		req.SetPropertyMappings(allPropertyMappings)
+	}
+
+	if opts.SigningKey != "" {
+		signingKeyUUID, err := c.GetCertificateByName(ctx, opts.SigningKey)
+		if err != nil {
+			return nil, fmt.Errorf("failed to look up signing key %q: %w", opts.SigningKey, err)
+		}
+		req.SetSigningKey(signingKeyUUID)
+	}
+
+	return req, nil
+}
+
+func providerInfoFromResponse(provider *api.OAuth2Provider) *ProviderInfo {
+	return &ProviderInfo{
+		ID:           provider.Pk,
+		Name:         provider.Name,
+		ClientID:     provider.GetClientId(),
+		ClientSecret: provider.GetClientSecret(),
+	}
+}
+
+// CreateOAuth2Provider creates a new OAuth2 provider
+func (c *APIClient) CreateOAuth2Provider(ctx context.Context, name string, opts *OAuth2ProviderOptions) (*ProviderInfo, error) {
+	req, err := c.buildProviderRequest(ctx, name, opts)
+	if err != nil {
+		return nil, err
+	}
+
+	provider, _, err := c.api.ProvidersAPI.ProvidersOauth2Create(ctx).OAuth2ProviderRequest(*req).Execute()
+	if err != nil {
+		return nil, extractAPIError(err, "failed to create provider")
+	}
+
+	return providerInfoFromResponse(provider), nil
+}
+
+// UpdateOAuth2Provider updates an existing OAuth2 provider
+func (c *APIClient) UpdateOAuth2Provider(ctx context.Context, id int32, name string, opts *OAuth2ProviderOptions) (*ProviderInfo, error) {
+	req, err := c.buildProviderRequest(ctx, name, opts)
+	if err != nil {
+		return nil, err
+	}
+
+	provider, _, err := c.api.ProvidersAPI.ProvidersOauth2Update(ctx, id).OAuth2ProviderRequest(*req).Execute()
+	if err != nil {
+		return nil, extractAPIError(err, "failed to update provider")
+	}
+
+	return providerInfoFromResponse(provider), nil
+}
+
+// DeleteOAuth2Provider deletes an OAuth2 provider by ID
+func (c *APIClient) DeleteOAuth2Provider(ctx context.Context, id int32) error {
+	_, err := c.api.ProvidersAPI.ProvidersOauth2Destroy(ctx, id).Execute()
+	if err != nil {
+		return extractAPIError(err, "failed to delete provider")
+	}
+	return nil
+}
+
+// ProviderURLs contains the OIDC URLs for an OAuth2 provider
+type ProviderURLs struct {
+	Issuer       string
+	Authorize    string
+	Token        string
+	UserInfo     string
+	ProviderInfo string // .well-known/openid-configuration URL
+	Logout       string
+	JWKS         string
+}
+
+// GetOAuth2ProviderURLs retrieves the OIDC URLs for a provider from the Authentik API
+func (c *APIClient) GetOAuth2ProviderURLs(ctx context.Context, providerID int32) (*ProviderURLs, error) {
+	urls, resp, err := c.api.ProvidersAPI.ProvidersOauth2SetupUrlsRetrieve(ctx, providerID).Execute()
+	if err != nil {
+		if resp != nil && resp.StatusCode == http.StatusNotFound {
+			return nil, fmt.Errorf("provider %d not found", providerID)
+		}
+		return nil, extractAPIError(err, "failed to get provider URLs")
+	}
+
+	return &ProviderURLs{
+		Issuer:       urls.GetIssuer(),
+		Authorize:    urls.GetAuthorize(),
+		Token:        urls.GetToken(),
+		UserInfo:     urls.GetUserInfo(),
+		ProviderInfo: urls.GetProviderInfo(),
+		Logout:       urls.GetLogout(),
+		JWKS:         urls.GetJwks(),
+	}, nil
+}

@@ -1,0 +1,254 @@
+package v1alpha1
+
+import (
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+)
+
+// OAuth2ProviderSpec defines the OAuth2 provider configuration
+type OAuth2ProviderSpec struct {
+	// AuthorizationFlow is the flow used for authorization
+	// +kubebuilder:validation:Required
+	AuthorizationFlow string `json:"authorizationFlow"`
+
+	// InvalidationFlow is the flow used for token invalidation/logout
+	// +kubebuilder:validation:Required
+	InvalidationFlow string `json:"invalidationFlow"`
+
+	// RedirectURIs is the list of allowed redirect URIs.
+	// Accepts any valid URI scheme (e.g. https://, http://, custom schemes
+	// like app.immich:// or argocd://) to support native and mobile app clients.
+	// +kubebuilder:validation:MinItems=1
+	// +kubebuilder:validation:items:Pattern=`^[a-zA-Z][a-zA-Z0-9+.-]*:`
+	RedirectURIs []string `json:"redirectUris"`
+
+	// Scopes is a list of scope names to enable for this provider (e.g., openid, email, profile)
+	// These are looked up by scope name and added to the provider's property mappings
+	// +kubebuilder:default={"openid","profile","email"}
+	// +optional
+	Scopes []string `json:"scopes,omitempty"`
+
+	// ClientType is the OAuth2 client type (confidential or public)
+	// +kubebuilder:validation:Enum=confidential;public
+	// +kubebuilder:default=confidential
+	// +optional
+	ClientType string `json:"clientType,omitempty"`
+
+	// AccessCodeValidity defines how long access codes are valid
+	// +kubebuilder:default="minutes=1"
+	// +optional
+	AccessCodeValidity string `json:"accessCodeValidity,omitempty"`
+
+	// AccessTokenValidity defines how long access tokens are valid
+	// +kubebuilder:default="minutes=5"
+	// +optional
+	AccessTokenValidity string `json:"accessTokenValidity,omitempty"`
+
+	// RefreshTokenValidity defines how long refresh tokens are valid
+	// +kubebuilder:default="days=30"
+	// +optional
+	RefreshTokenValidity string `json:"refreshTokenValidity,omitempty"`
+
+	// SubMode configures what data is included in the subject claim
+	// +kubebuilder:validation:Enum=hashed_user_id;user_id;user_uuid;user_username;user_email;user_upn
+	// +kubebuilder:default=hashed_user_id
+	// +optional
+	SubMode string `json:"subMode,omitempty"`
+
+	// IncludeClaimsInIDToken includes claims in the ID token
+	// +kubebuilder:default=true
+	// +optional
+	IncludeClaimsInIDToken *bool `json:"includeClaimsInIdToken,omitempty"`
+
+	// IssuerMode configures how the issuer is determined
+	// +kubebuilder:validation:Enum=global;per_provider
+	// +kubebuilder:default=per_provider
+	// +optional
+	IssuerMode string `json:"issuerMode,omitempty"`
+
+	// PropertyMappings is a list of property mapping UUIDs to apply
+	// +optional
+	PropertyMappings []string `json:"propertyMappings,omitempty"`
+
+	// SigningKey is the name of the certificate keypair used to sign tokens
+	// +kubebuilder:default="authentik Self-signed Certificate"
+	// +optional
+	SigningKey string `json:"signingKey,omitempty"`
+}
+
+// SecretSpec defines the output secret configuration
+type SecretSpec struct {
+	// Name is the name of the secret to create
+	// Defaults to {CR name}-oauth or {CR name}-saml depending on type
+	// +optional
+	Name string `json:"name,omitempty"`
+
+	// Labels to add to the secret
+	// +optional
+	Labels map[string]string `json:"labels,omitempty"`
+
+	// Annotations to add to the secret
+	// +optional
+	Annotations map[string]string `json:"annotations,omitempty"`
+
+	// Template is a Go template for custom secret data
+	// If not specified, a default template is used
+	// +optional
+	Template string `json:"template,omitempty"`
+}
+
+// ApplicationBaseSpec contains fields shared by all Authentik application specs.
+type ApplicationBaseSpec struct {
+	// Name is the display name of the application in Authentik
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=128
+	Name string `json:"name"`
+
+	// Slug is the URL-friendly identifier for the application
+	// Defaults to metadata.name if not specified
+	// +kubebuilder:validation:Pattern=`^[a-z0-9-]+$`
+	// +kubebuilder:validation:MaxLength=128
+	// +optional
+	Slug string `json:"slug,omitempty"`
+
+	// Group is the application group in Authentik
+	// +optional
+	Group string `json:"group,omitempty"`
+
+	// PolicyEngineMode determines how policies are evaluated
+	// +kubebuilder:validation:Enum=all;any
+	// +kubebuilder:default=any
+	// +optional
+	PolicyEngineMode string `json:"policyEngineMode,omitempty"`
+
+	// MetaLaunchURL is the URL to launch the application
+	// +kubebuilder:validation:MaxLength=2048
+	// +kubebuilder:validation:Pattern=`^https?://`
+	// +optional
+	MetaLaunchURL string `json:"metaLaunchUrl,omitempty"`
+
+	// MetaDescription is the application description
+	// +kubebuilder:validation:MaxLength=1024
+	// +optional
+	MetaDescription string `json:"metaDescription,omitempty"`
+
+	// MetaPublisher is the application publisher
+	// +kubebuilder:validation:MaxLength=256
+	// +optional
+	MetaPublisher string `json:"metaPublisher,omitempty"`
+
+	// OpenInNewTab opens the application in a new browser tab
+	// +kubebuilder:default=true
+	// +optional
+	OpenInNewTab *bool `json:"openInNewTab,omitempty"`
+
+	// Secret configures the output Kubernetes secret
+	// +optional
+	Secret SecretSpec `json:"secret,omitempty"`
+}
+
+// AuthentikOAuth2ApplicationSpec defines the desired state of AuthentikOAuth2Application
+type AuthentikOAuth2ApplicationSpec struct {
+	ApplicationBaseSpec `json:",inline"`
+
+	// Provider configures the OAuth2 provider settings
+	// +kubebuilder:validation:Required
+	Provider OAuth2ProviderSpec `json:"provider"`
+}
+
+// AuthentikOAuth2ApplicationStatus defines the observed state of AuthentikOAuth2Application
+type AuthentikOAuth2ApplicationStatus struct {
+	// Conditions represent the latest available observations of the resource's state
+	// +optional
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
+
+	// ApplicationUID is the Authentik internal UID for the application
+	// +optional
+	ApplicationUID string `json:"applicationUid,omitempty"`
+
+	// ProviderID is the Authentik internal ID for the OAuth2 provider
+	// +optional
+	ProviderID int32 `json:"providerId,omitempty"`
+
+	// SecretName is the name of the generated Kubernetes secret
+	// +optional
+	SecretName string `json:"secretName,omitempty"`
+
+	// ClientID is the OAuth2 client ID (for reference only)
+	// +optional
+	ClientID string `json:"clientId,omitempty"`
+
+	// ObservedGeneration is the last observed generation of the resource
+	// +optional
+	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
+}
+
+// +kubebuilder:object:root=true
+// +kubebuilder:subresource:status
+// +kubebuilder:printcolumn:name="Status",type="string",JSONPath=".status.conditions[?(@.type=='Ready')].status"
+// +kubebuilder:printcolumn:name="Application UID",type="string",JSONPath=".status.applicationUid"
+// +kubebuilder:printcolumn:name="Provider ID",type="integer",JSONPath=".status.providerId"
+// +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp"
+
+// AuthentikOAuth2Application is the Schema for the authentikoauth2applications API
+type AuthentikOAuth2Application struct {
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+
+	Spec   AuthentikOAuth2ApplicationSpec   `json:"spec,omitempty"`
+	Status AuthentikOAuth2ApplicationStatus `json:"status,omitempty"`
+}
+
+// +kubebuilder:object:root=true
+
+// AuthentikOAuth2ApplicationList contains a list of AuthentikOAuth2Application
+type AuthentikOAuth2ApplicationList struct {
+	metav1.TypeMeta `json:",inline"`
+	metav1.ListMeta `json:"metadata,omitempty"`
+	Items           []AuthentikOAuth2Application `json:"items"`
+}
+
+func init() {
+	SchemeBuilder.Register(&AuthentikOAuth2Application{}, &AuthentikOAuth2ApplicationList{})
+}
+
+// GetSlug returns the slug, defaulting to metadata.name if not specified
+func (a *AuthentikOAuth2Application) GetSlug() string {
+	if a.Spec.Slug != "" {
+		return a.Spec.Slug
+	}
+	return a.Name
+}
+
+// GetSecretName returns the secret name, defaulting to {name}-oauth if not specified
+func (a *AuthentikOAuth2Application) GetSecretName() string {
+	if a.Spec.Secret.Name != "" {
+		return a.Spec.Secret.Name
+	}
+	return a.Name + "-oauth"
+}
+
+// GetProviderName returns a consistent name for the OAuth2 provider
+func (a *AuthentikOAuth2Application) GetProviderName() string {
+	return a.GetSlug() + "-provider"
+}
+
+// Condition types
+const (
+	// ConditionTypeReady indicates the resource has been successfully reconciled
+	ConditionTypeReady = "Ready"
+	// ConditionTypeSynced indicates the resource has been synced to Authentik
+	ConditionTypeSynced = "Synced"
+)
+
+// Condition reasons
+const (
+	ReasonSucceeded        = "Succeeded"
+	ReasonFailed           = "Failed"
+	ReasonInProgress       = "InProgress"
+	ReasonAuthentikError   = "AuthentikError"
+	ReasonSecretError      = "SecretError"
+	ReasonTemplateError    = "TemplateError"
+	ReasonValidationFailed = "ValidationFailed"
+	ReasonDeletionFailed   = "DeletionFailed"
+)

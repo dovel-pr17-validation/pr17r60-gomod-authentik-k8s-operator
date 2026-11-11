@@ -1,0 +1,82 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "authentik-operator.fullname" . }}-manager-role
+  labels:
+    {{- include "authentik-operator.labels" . | nindent 4 }}
+rules:
+  # AuthentikOAuth2Application CRD management
+  - apiGroups:
+      - goauthentik.io
+    resources:
+      - authentikoauth2applications
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+  - apiGroups:
+      - goauthentik.io
+    resources:
+      - authentikoauth2applications/finalizers
+    verbs:
+      - update
+  - apiGroups:
+      - goauthentik.io
+    resources:
+      - authentikoauth2applications/status
+    verbs:
+      - get
+      - patch
+      - update
+  # AuthentikSAMLApplication CRD management
+  - apiGroups:
+      - goauthentik.io
+    resources:
+      - authentiksamlapplications
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+  - apiGroups:
+      - goauthentik.io
+    resources:
+      - authentiksamlapplications/finalizers
+    verbs:
+      - update
+  - apiGroups:
+      - goauthentik.io
+    resources:
+      - authentiksamlapplications/status
+    verbs:
+      - get
+      - patch
+      - update
+  # Secret management
+  - apiGroups:
+      - ""
+    resources:
+      - secrets
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+  # Events for status updates
+  - apiGroups:
+      - ""
+    resources:
+      - events
+    verbs:
+      - create
+      - patch

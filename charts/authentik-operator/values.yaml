@@ -1,0 +1,155 @@
+# Default values for authentik-operator
+
+replicaCount: 1
+
+image:
+  repository: ghcr.io/JeffResc/authentik-k8s-operator
+  pullPolicy: IfNotPresent
+  # Overrides the image tag whose default is the chart appVersion
+  tag: ""
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+# Authentik connection configuration
+authentik:
+  # URL of the Authentik instance (required)
+  url: ""
+  # Reference to an existing secret containing the API token
+  existingSecret:
+    # Name of the secret
+    name: ""
+    # Key in the secret containing the token
+    key: "token"
+
+serviceAccount:
+  # Specifies whether a service account should be created
+  create: true
+  # Annotations to add to the service account
+  annotations: {}
+  # The name of the service account to use
+  # If not set and create is true, a name is generated using the fullname template
+  name: ""
+
+podAnnotations: {}
+
+podSecurityContext:
+  runAsNonRoot: true
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+  readOnlyRootFilesystem: true
+
+resources:
+  limits:
+    cpu: 500m
+    memory: 128Mi
+  requests:
+    cpu: 10m
+    memory: 64Mi
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity: {}
+
+topologySpreadConstraints: []
+
+priorityClassName: ""
+
+# Pod Disruption Budget configuration
+podDisruptionBudget:
+  enabled: false
+  minAvailable: 1
+
+# Leader election configuration
+leaderElection:
+  enabled: true
+
+# Controller configuration
+controller:
+  # Interval between periodic drift detection reconciliations
+  requeueInterval: 5m
+
+# Metrics configuration
+metrics:
+  enabled: true
+  port: 8080
+  # ServiceMonitor configuration for Prometheus Operator
+  serviceMonitor:
+    # Create a ServiceMonitor resource
+    enabled: false
+    # Additional labels for the ServiceMonitor
+    labels: {}
+    # Additional annotations for the ServiceMonitor
+    annotations: {}
+    # Scrape interval (e.g., "30s")
+    interval: ""
+    # Scrape timeout (e.g., "10s")
+    scrapeTimeout: ""
+    # Metrics path (defaults to /metrics)
+    path: ""
+    # Scheme (http or https)
+    scheme: ""
+    # TLS configuration
+    tlsConfig: {}
+    # Relabelings for the ServiceMonitor
+    relabelings: []
+    # Metric relabelings for the ServiceMonitor
+    metricRelabelings: []
+    # Namespace selector for the ServiceMonitor
+    namespaceSelector: {}
+
+# Health probe configuration
+health:
+  port: 8081
+  # How long the readiness probe tolerates Authentik being unreachable
+  # before reporting unready (e.g., "60s", "2m")
+  readinessGracePeriod: "60s"
+
+# Webhook configuration
+webhook:
+  # Enable the validating admission webhook
+  enabled: false
+  # Webhook server port
+  port: 9443
+  # cert-manager integration for webhook TLS certificates
+  certManager:
+    # Enable cert-manager Certificate resource
+    enabled: true
+    # Issuer reference (if empty, a self-signed issuer is created)
+    issuerRef: {}
+    #   name: my-issuer
+    #   kind: ClusterIssuer
+
+# Event webhook configuration for near-instant drift detection
+eventWebhook:
+  # Enable the Authentik event webhook receiver
+  enabled: false
+  # Port for the event webhook HTTP server
+  port: 9444
+  # External URL that Authentik will use to reach the webhook receiver.
+  # Must be reachable from the Authentik instance.
+  # If empty, defaults to http://<release>-authentik-operator-events.<namespace>.svc:<port>
+  externalURL: ""
+  # Shared secret for authenticating incoming event webhooks.
+  # Reference an existing Kubernetes secret containing the webhook secret.
+  secret:
+    # Name of the existing secret (leave empty to disable authentication)
+    existingSecret: ""
+    # Key within the secret that contains the webhook secret value
+    key: "event-webhook-secret"
+
+# Logging configuration
+logging:
+  # Log level (debug, info, warn, error)
+  level: info
+  # Development mode (pretty print logs)
+  development: false

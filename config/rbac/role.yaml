@@ -1,0 +1,47 @@
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: manager-role
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - secrets
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - goauthentik.io
+  resources:
+  - authentikoauth2applications
+  - authentiksamlapplications
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - goauthentik.io
+  resources:
+  - authentikoauth2applications/finalizers
+  - authentiksamlapplications/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - goauthentik.io
+  resources:
+  - authentikoauth2applications/status
+  - authentiksamlapplications/status
+  verbs:
+  - get
+  - patch
+  - update
